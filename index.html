@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Néo-Kairos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: plein écran, canvas de jeu + HUD superposé (look néon unique, sombre) */
+:root {
+  --night: #070912;
+  --panel: rgba(10, 14, 30, 0.86);
+  --line: #23305a;
+  --ink: #dfe8ff;
+  --dim: #8592b8;
+  --cyan: #2ef2ff;
+  --pink: #ff3fa4;
+  --gold: #ffd166;
+  --hp: #ff4d6d;
+  --en: #43f5a0;
+  --display: "Chakra Petch", "Trebuchet MS", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; background: var(--night); color: var(--ink); overflow: hidden; font-family: var(--mono); font-size: 14px; }
+canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+[hidden] { display: none !important; }
+
+#hud { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(10px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 6px; pointer-events: none; z-index: 5; width: min(260px, 46vw); }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; backdrop-filter: blur(4px); }
+#zoneName { font-family: var(--display); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 13px; }
+#credits { font-family: var(--display); font-size: 22px; color: var(--gold); font-variant-numeric: tabular-nums; }
+.bar { height: 8px; background: #151c36; border-radius: 4px; overflow: hidden; margin-top: 3px; }
+.bar > i { display: block; height: 100%; width: 50%; transition: width .2s; }
+.lbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+#scan { font-size: 12px; }
+#scanBars { letter-spacing: 2px; color: var(--cyan); }
+#inv { font-size: 11px; color: var(--dim); line-height: 1.5; }
+
+#mini { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); border: 1px solid var(--line); border-radius: 6px; background: var(--panel); z-index: 5; width: min(300px, 44vw); image-rendering: pixelated; }
+#topBtns { position: fixed; right: max(10px, env(safe-area-inset-right, 0px)); top: calc(10px + env(safe-area-inset-top, 0px) + min(84px, 12.5vw)); display: flex; gap: 6px; z-index: 6; }
+.tbtn { font: 700 11px var(--mono); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; cursor: pointer; }
+.tbtn:focus-visible, button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+#log { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column-reverse; align-items: center; gap: 4px; z-index: 5; pointer-events: none; width: min(560px, 92vw); }
+.msg { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--cyan); padding: 6px 12px; border-radius: 4px; font-size: 13px; animation: fadeout 4s forwards; text-align: center; }
+.msg.good { border-left-color: var(--gold); } .msg.bad { border-left-color: var(--hp); }
+@keyframes fadeout { 0%,75% { opacity: 1 } 100% { opacity: 0 } }
+
+#hint { position: fixed; left: 50%; transform: translateX(-50%); top: calc(14px + env(safe-area-inset-top, 0px)); z-index: 5; font-size: 12px; pointer-events: none; color: var(--cyan); text-shadow: 0 0 6px #000; }
+
+.overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(4, 6, 14, 0.78); padding: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.card { background: #0b1022; border: 1px solid var(--line); border-radius: 10px; padding: 22px; width: min(620px, 100%); max-height: 100%; overflow-y: auto; box-shadow: 0 0 40px rgba(46, 242, 255, .12); }
+h1 { font-family: var(--display); font-size: clamp(34px, 8vw, 56px); margin: 0; letter-spacing: .06em; line-height: 1; background: linear-gradient(90deg, var(--cyan), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; text-wrap: balance; }
+h2 { font-family: var(--display); margin: 0 0 4px; font-size: 22px; letter-spacing: .05em; text-wrap: balance; }
+.sub { color: var(--dim); margin: 6px 0 14px; line-height: 1.55; max-width: 62ch; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 12px; margin: 10px 0 16px; }
+.keys b { color: var(--cyan); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn { font: 700 14px var(--display); letter-spacing: .08em; text-transform: uppercase; background: transparent; color: var(--cyan); border: 1px solid var(--cyan); border-radius: 6px; padding: 10px 18px; cursor: pointer; }
+.btn:hover { background: rgba(46, 242, 255, .1); }
+.btn.alt { color: var(--pink); border-color: var(--pink); }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+
+#shopList { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+.item { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.item .n { font-family: var(--display); font-weight: 700; font-size: 15px; }
+.item .d { color: var(--dim); font-size: 12px; grid-column: 1; min-width: 0; }
+.item .p { color: var(--gold); font-variant-numeric: tabular-nums; }
+.item button { grid-row: 1 / span 2; grid-column: 2; }
+.item.key { border-color: var(--pink); }
+.tag { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--pink); margin-left: 6px; }
+
+#touch { position: fixed; inset: auto 0 0 0; height: 0; z-index: 6; }
+#stick { position: fixed; left: max(24px, env(safe-area-inset-left, 0px)); bottom: calc(28px + env(safe-area-inset-bottom, 0px)); width: 120px; height: 120px; border-radius: 50%; border: 1px solid var(--line); background: rgba(10, 14, 30, .45); touch-action: none; }
+#knob { position: absolute; left: 40px; top: 40px; width: 40px; height: 40px; border-radius: 50%; background: rgba(46, 242, 255, .35); border: 1px solid var(--cyan); }
+.tact { position: fixed; width: 64px; height: 64px; border-radius: 50%; font: 700 16px var(--display); color: var(--ink); background: rgba(10, 14, 30, .6); border: 1px solid var(--cyan); touch-action: none; }
+#tE { right: max(24px, env(safe-area-inset-right, 0px)); bottom: calc(70px + env(safe-area-inset-bottom, 0px)); }
+#tQ { right: max(100px, calc(env(safe-area-inset-right, 0px) + 76px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); border-color: var(--pink); }
+@media (max-width: 700px) { #hint { top: auto; bottom: calc(110px + env(safe-area-inset-bottom, 0px)); } #log { bottom: calc(160px + env(safe-area-inset-bottom, 0px)); } }
+@media (prefers-reduced-motion: reduce) { .msg { animation: none; } }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" hidden>
+  <div class="box">
+    <div id="zoneName">Néo-Marché</div>
+    <div id="credits">0 ¢</div>
+  </div>
+  <div class="box">
+    <div class="lbl"><span>Santé</span><span id="hpT">100</span></div>
+    <div class="bar"><i id="hpB" style="background:var(--hp)"></i></div>
+    <div class="lbl" style="margin-top:6px"><span>Énergie</span><span id="enT">100</span></div>
+    <div class="bar"><i id="enB" style="background:var(--en)"></i></div>
+  </div>
+  <div class="box" id="scan">Scanner <span id="scanLvl">Mk1</span> · <span id="scanBars">▯▯▯▯▯</span> <span id="scanDist"></span></div>
+  <div class="box" id="inv"></div>
+</div>
+<canvas id="mini" hidden></canvas>
+<div id="topBtns" hidden>
+  <button class="tbtn" id="bSound" type="button">Son : oui</button>
+  <button class="tbtn" id="bPause" type="button">Pause</button>
+</div>
+<div id="hint"></div>
+<div id="log"></div>
+
+<div id="touch" hidden>
+  <div id="stick"><div id="knob"></div></div>
+  <button class="tact" id="tE" type="button">E</button>
+  <button class="tact" id="tQ" type="button">IEM</button>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <h1>NÉO-KAIROS</h1>
+    <p class="sub">2189. La mégapole s'effondre. Fouille les quartiers à l'aide de ton scanner pour déterrer des trésors, revends-les en crédits, survis aux drones de sécurité et achète les accès qui t'ouvriront les secteurs suivants. Ton but : réunir assez pour un billet de la dernière navette orbitale.</p>
+    <div class="keys">
+      <b>ZQSD / WASD / flèches</b><span>Se déplacer</span>
+      <b>E / Espace</b><span>Fouiller · parler au marchand · ouvrir un portail</span>
+      <b>F</b><span>Grenade IEM : neutralise les drones proches</span>
+      <b>P / Échap</b><span>Pause</span>
+      <b>Scanner</b><span>Plus il bipe vite, plus le trésor est proche</span>
+    </div>
+    <div class="row">
+      <button class="btn" id="bNew" type="button">Nouvelle partie</button>
+      <button class="btn alt" id="bCont" type="button" hidden>Continuer</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="shop" hidden>
+  <div class="card">
+    <h2 id="shopTitle">Marchand</h2>
+    <div class="sub" id="shopSub"></div>
+    <div id="shopList"></div>
+    <button class="btn alt" id="bCloseShop" type="button">Quitter (E)</button>
+  </div>
+</div>
+
+<div class="overlay" id="pause" hidden>
+  <div class="card">
+    <h2>Pause</h2>
+    <p class="sub" id="pauseStats"></p>
+    <div class="row">
+      <button class="btn" id="bResume" type="button">Reprendre</button>
+      <button class="btn alt" id="bRestart" type="button">Recommencer à zéro</button>
+    </div>
+    <p class="sub" id="confirmTxt" hidden>Toute la progression sera effacée. <button class="btn alt" id="bConfirm" type="button">Confirmer</button></p>
+  </div>
+</div>
+
+<div class="overlay" id="endScr" hidden>
+  <div class="card">
+    <h1 id="endTitle">VICTOIRE</h1>
+    <p class="sub" id="endTxt"></p>
+    <button class="btn" id="bEnd" type="button">Rejouer</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ======================= CONFIG =======================
+const T = 32;                 // taille d'une tuile (px)
+const ZW = 36, ZH = 40, NZ = 4;
+const W = ZW * NZ, H = ZH;
+const SAVE_KEY = "neokairos_save_v1";
+
+const R = { ROAD: 0, WALK: 1, BUILD: 2, PARK: 3, TOXIC: 4, WALL: 5, GATE: 6, PLAZA: 7, KIOSK: 8, LOT: 9 };
+
+const ZONES = [
+  { name: "Néo-Marché", neon: ["#2ef2ff", "#ff3fa4", "#ffd166"], ground: "#1a1f33", road: "#10131f", drones: 0, dmg: 0, dspd: 0,
+    tv: [25, 70], loot: ["Puce mémoire rétro", "Holo-montre", "Disque de données", "Lunettes AR", "Synthé de poche", "Bague à LED"] },
+  { name: "Secteur Industriel", neon: ["#ff9f1c", "#ff5e3a", "#2ef2ff"], ground: "#211c1a", road: "#14110f", drones: 5, dmg: 12, dspd: 3.0,
+    tv: [70, 160], loot: ["Moteur de drone", "Lingot de titane", "Servo-bras", "Bobine supraconductrice", "Pile à hydrogène"] },
+  { name: "Marais Toxiques", neon: ["#7dff4d", "#c8ff00", "#ff3fa4"], ground: "#141e17", road: "#0d130f", drones: 8, dmg: 16, dspd: 3.4,
+    tv: [150, 340], loot: ["Noyau de plasma", "Spore cristallisée", "Batterie à fusion", "Mutagène stable", "Implant militaire"] },
+  { name: "Citadelle Quantique", neon: ["#b06bff", "#ffd166", "#2ef2ff"], ground: "#1b1628", road: "#100d19", drones: 11, dmg: 22, dspd: 3.9,
+    tv: [300, 760], loot: ["Gemme quantique", "Fragment d'IA", "Matrice holographique", "Cœur de singularité", "Relique corporatiste"] },
+];
+
+// Objets : effet appliqué à l'achat
+const ITEMS = {
+  ration:  { n: "Ration nutritive", d: "+35 énergie", p: 15, use: s => { s.en = Math.min(s.enMax, s.en + 35); } },
+  cell:    { n: "Cellule d'énergie XL", d: "+100 énergie", p: 45, use: s => { s.en = Math.min(s.enMax, s.en + 100); } },
+  medkit:  { n: "Médikit", d: "+50 santé", p: 40, use: s => { s.hp = Math.min(100, s.hp + 50); } },
+  emp:     { n: "Grenade IEM", d: "Touche F : neutralise les drones dans un rayon de 5 cases pendant 6 s", p: 60, use: s => { s.emp++; } },
+  scan2:   { n: "Scanner Mk2", d: "Portée 12 cases et distance affichée", p: 150, once: "scan", lvl: 2, use: s => { s.scan = Math.max(s.scan, 2); } },
+  boots:   { n: "Bottes magnétiques", d: "Vitesse +30 %", p: 200, once: "boots", use: s => { s.boots = true; } },
+  badge:   { n: "Badge Secteur Industriel", d: "Ouvre le portail vers le Secteur Industriel", p: 250, once: "badge", key: 0, use: s => { s.gates[0] = true; } },
+  scan3:   { n: "Scanner Mk3", d: "Portée 20 cases et flèche de direction", p: 600, once: "scan", lvl: 3, use: s => { s.scan = 3; } },
+  shield:  { n: "Bouclier personnel", d: "Dégâts des drones divisés par deux", p: 450, once: "shield", use: s => { s.shield = true; } },
+  suit:    { n: "Combinaison anti-toxique", d: "Ouvre l'accès aux Marais Toxiques, protège des flaques toxiques", p: 700, once: "suit", key: 1, use: s => { s.suit = true; s.gates[1] = true; } },
+  battery: { n: "Batterie étendue", d: "Énergie maximale 150", p: 380, once: "battery", use: s => { s.enMax = 150; s.en = Math.min(150, s.en + 50); } },
+  qkey:    { n: "Clé quantique", d: "Ouvre la Citadelle Quantique", p: 1800, once: "qkey", key: 2, use: s => { s.gates[2] = true; } },
+  ticket:  { n: "Billet navette orbitale", d: "Quitte Néo-Kairos pour de bon. Victoire !", p: 5000, once: "ticket", use: s => { s.won = true; } },
+};
+const SHOPS = [
+  ["ration", "medkit", "emp", "scan2", "boots", "badge"],
+  ["ration", "cell", "medkit", "emp", "scan3", "shield", "suit"],
+  ["ration", "cell", "medkit", "emp", "battery", "qkey"],
+  ["ration", "cell", "medkit", "emp", "ticket"],
+];
+const GATE_ITEM = ["badge", "suit", "qkey"];
+
+// ======================= RNG / UTILS =======================
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const rand = Math.random;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+function hash(x, y) { let h = x * 374761393 + y * 668265263; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+
+// ======================= MAP =======================
+const map = new Uint8Array(W * H);
+const tileAt = (x, y) => (x < 0 || y < 0 || x >= W || y >= H) ? R.WALL : map[y * W + x];
+const isRoadL = v => (v % 9 === 4 || v % 9 === 5);
+const zoneOf = x => clamp(Math.floor(x / ZW), 0, NZ - 1);
+const KIOSK = (z) => ({ x: z * ZW + 9, y: 9 });
+const SPAWN = (z) => ({ x: z * ZW + 5.5, y: 9.5 });
+
+function genMap(seed) {
+  const rng = mulberry32(seed);
+  const blockType = {};
+  for (let z = 0; z < NZ; z++) for (let by = 0; by < 5; by++) for (let bx = 0; bx < 5; bx++) {
+    const r = rng(); let t = R.BUILD;
+    if (z === 0) t = r < .7 ? R.BUILD : R.PARK;
+    if (z === 1) t = r < .62 ? R.BUILD : r < .82 ? R.TOXIC : R.LOT;
+    if (z === 2) t = r < .5 ? R.BUILD : r < .82 ? R.TOXIC : R.PARK;
+    if (z === 3) t = r < .72 ? R.BUILD : R.PLAZA;
+    if (bx === 1 && by === 1) t = R.PLAZA; // place du marchand
+    blockType[z + "," + bx + "," + by] = t;
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const z = zoneOf(x), lx = x - z * ZW;
+    let t;
+    if (y === 0 || y === H - 1 || x === 0 || x === W - 1) t = R.WALL;
+    else if (lx === ZW - 1) t = (y === 22 || y === 23) ? R.GATE : R.WALL;
+    else if (isRoadL(lx) || isRoadL(y)) t = R.ROAD;
+    else {
+      let nearRoad = false;
+      for (let dy = -1; dy <= 1 && !nearRoad; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const l2 = lx + dx; if (l2 < 0 || l2 >= ZW - 1) continue;
+        if (isRoadL(l2) || isRoadL(y + dy)) { nearRoad = true; break; }
+      }
+      if (nearRoad) t = R.WALK;
+      else t = blockType[z + "," + Math.floor((lx + 3) / 9) + "," + Math.floor((y + 3) / 9)];
+    }
+    map[y * W + x] = t;
+  }
+  for (let z = 0; z < NZ; z++) { const k = KIOSK(z); map[k.y * W + k.x] = R.KIOSK; }
+}
+
+// ======================= ÉTAT =======================
+let S = null;          // état sauvegardé
+let drones = [];
+let player = { x: 0, y: 0, vx: 0, vy: 0, face: 0, search: 0, hurt: 0 };
+let paused = true, inShop = -1, running = false;
+let pulses = [], particles = [], floaters = [];
+
+function newState() {
+  return {
+    seed: (Math.random() * 1e9) | 0,
+    credits: 0, hp: 100, en: 100, enMax: 100,
+    scan: 1, boots: false, shield: false, suit: false, emp: 1,
+    gates: [false, false, false], won: false,
+    px: SPAWN(0).x, py: SPAWN(0).y,
+    treasures: [], respawn: [], found: 0, earned: 0, time: 0, deaths: 0,
+  };
+}
+
+function walkableForTreasure(x, y) {
+  const t = tileAt(x, y);
+  return t === R.WALK || t === R.ROAD || t === R.PARK || t === R.LOT || t === R.TOXIC || t === R.PLAZA;
+}
+function spawnTreasure(z) {
+  for (let i = 0; i < 200; i++) {
+    const x = z * ZW + 1 + ((rand() * (ZW - 2)) | 0), y = 1 + ((rand() * (H - 2)) | 0);
+    if (!walkableForTreasure(x, y)) continue;
+    const k = KIOSK(z); if (dist(x, y, k.x, k.y) < 4) continue;
+    if (dist(x + .5, y + .5, player.x, player.y) < 6) continue;
+    if (S.treasures.some(t => dist(t.x, t.y, x, y) < 4)) continue;
+    const zd = ZONES[z];
+    let v = zd.tv[0] + rand() * (zd.tv[1] - zd.tv[0]);
+    let name = zd.loot[(rand() * zd.loot.length) | 0];
+    if (rand() < 0.08) { v *= 2.5; name += " (rare)"; }
+    // les trésors dans les zones dangereuses (flaques) valent plus
+    if (tileAt(x, y) === R.TOXIC) v *= 1.4;
+    S.treasures.push({ x, y, z, v: Math.round(v), name });
+    return;
+  }
+}
+const TREASURES_PER_ZONE = 8;
+
+function spawnDrones() {
+  drones = [];
+  for (let z = 0; z < NZ; z++) for (let i = 0; i < ZONES[z].drones; i++) {
+    const p = randomPointInZone(z);
+    drones.push({ x: p.x, y: p.y, z, tx: p.x, ty: p.y, stun: 0, cool: 0, chase: false, ph: rand() * 6 });
+  }
+}
+function randomPointInZone(z) {
+  for (let i = 0; i < 100; i++) {
+    const x = z * ZW + 2 + rand() * (ZW - 4), y = 2 + rand() * (H - 4);
+    if (z === 0 || dist(x, y, z * ZW, 22.5) > 8) return { x, y };
+  }
+  return { x: z * ZW + ZW / 2, y: H / 2 };
+}
+
+// ======================= RENDU MONDE (pré-calculé) =======================
+let worldCv = null, miniBase = null;
+function prerender() {
+  worldCv = document.createElement("canvas");
+  worldCv.width = W * T; worldCv.height = H * T;
+  const g = worldCv.getContext("2d");
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) drawTile(g, x, y);
+  // mini-carte
+  miniBase = document.createElement("canvas");
+  miniBase.width = W; miniBase.height = H;
+  const m = miniBase.getContext("2d");
+  const col = { 0: "#2a3150", 1: "#3a4266", 2: "#0c1020", 3: "#1f6d4a", 4: "#5bdc3a", 5: "#000", 6: "#ff3fa4", 7: "#4a4f7a", 8: "#ffd166", 9: "#5a4632" };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { m.fillStyle = col[tileAt(x, y)]; m.fillRect(x, y, 1, 1); }
+}
+
+function drawTile(g, x, y) {
+  const t = tileAt(x, y), z = zoneOf(x), Z = ZONES[z], px = x * T, py = y * T, lx = x - z * ZW;
+  const h = hash(x, y);
+  switch (t) {
+    case R.ROAD: {
+      g.fillStyle = Z.road; g.fillRect(px, py, T, T);
+      const hr = isRoadL(y), vr = isRoadL(lx);
+      g.fillStyle = "rgba(255,255,255,0.18)";
+      if (hr && !vr && y % 9 === 4) for (let i = 0; i < 2; i++) g.fillRect(px + i * 16 + 2, py + T - 1, 9, 2);
+      if (vr && !hr && lx % 9 === 4) for (let i = 0; i < 2; i++) g.fillRect(px + T - 1, py + i * 16 + 2, 2, 9);
+      if (hr && vr) { // passage piéton
+        g.fillStyle = "rgba(255,255,255,0.05)"; g.fillRect(px + 4, py + 4, T - 8, T - 8);
+      }
+      if (h < 0.04) { g.fillStyle = "rgba(46,242,255,0.08)"; g.beginPath(); g.ellipse(px + 16, py + 16, 12, 6, 0, 0, 7); g.fill(); }
+      break;
+    }
+    case R.WALK: case R.PLAZA: {
+      g.fillStyle = t === R.PLAZA ? shade(Z.ground, 18) : Z.ground; g.fillRect(px, py, T, T);
+      g.strokeStyle = "rgba(255,255,255,0.05)"; g.strokeRect(px + .5, py + .5, T - 1, T - 1);
+      if (t === R.PLAZA && (x + y) % 2 === 0) { g.fillStyle = "rgba(255,255,255,0.03)"; g.fillRect(px, py, T, T); }
+      if (t === R.WALK && h < 0.05) { // lampadaire
+        g.fillStyle = Z.neon[0]; g.globalAlpha = .12; g.beginPath(); g.arc(px + 16, py + 16, 14, 0, 7); g.fill(); g.globalAlpha = 1;
+        g.fillStyle = "#aab"; g.fillRect(px + 15, py + 15, 3, 3);
+      }
+      break;
+    }
+    case R.BUILD: {
+      const top = tileAt(x, y - 1) !== R.BUILD, left = tileAt(x - 1, y) !== R.BUILD, right = tileAt(x + 1, y) !== R.BUILD, bot = tileAt(x, y + 1) !== R.BUILD;
+      const bh = hash(Math.floor((lx + 3) / 9) + z * 10, Math.floor((y + 3) / 9));
+      g.fillStyle = shade("#0d1124", (bh * 14) | 0); g.fillRect(px, py, T, T);
+      // fenêtres néon
+      const nc = Z.neon[(bh * 3) | 0];
+      for (let wy = 0; wy < 3; wy++) for (let wx = 0; wx < 3; wx++) {
+        const hh = hash(x * 3 + wx, y * 3 + wy);
+        if (hh < 0.45) { g.fillStyle = nc; g.globalAlpha = 0.25 + hh; g.fillRect(px + 4 + wx * 9, py + 4 + wy * 9, 5, 4); }
+      }
+      g.globalAlpha = 1;
+      g.fillStyle = nc; g.globalAlpha = .7;
+      if (top) g.fillRect(px, py, T, 2); if (left) g.fillRect(px, py, 2, T);
+      if (right) g.fillRect(px + T - 2, py, 2, T); if (bot) g.fillRect(px, py + T - 2, T, 2);
+      g.globalAlpha = 1;
+      if (bot) { g.fillStyle = "rgba(0,0,0,.5)"; g.fillRect(px, py + T - 6, T, 4); }
+      if (h > 0.985) { g.fillStyle = "#334"; g.fillRect(px + 8, py + 8, 16, 16); g.fillStyle = nc; g.fillRect(px + 14, py + 14, 4, 4); } // antenne
+      break;
+    }
+    case R.PARK: {
+      g.fillStyle = z === 2 ? "#1d2a12" : "#103a2a"; g.fillRect(px, py, T, T);
+      if (h < 0.3) {
+        g.fillStyle = z === 2 ? "#3c4a1a" : "#1d6b4a"; g.beginPath(); g.arc(px + 8 + h * 40, py + 10 + h * 30, 7 + h * 10, 0, 7); g.fill();
+        g.fillStyle = z === 2 ? "#5a6a22" : "#2ef2aa"; g.globalAlpha = .25; g.beginPath(); g.arc(px + 6 + h * 40, py + 8 + h * 30, 3, 0, 7); g.fill(); g.globalAlpha = 1;
+      }
+      break;
+    }
+    case R.TOXIC: {
+      g.fillStyle = "#0d2a12"; g.fillRect(px, py, T, T);
+      g.fillStyle = "#3dff5a"; g.globalAlpha = 0.18 + h * 0.15; g.fillRect(px, py, T, T); g.globalAlpha = 1;
+      if (h < 0.4) { g.fillStyle = "rgba(200,255,0,.35)"; g.beginPath(); g.arc(px + h * 70, py + h * 50, 2 + h * 6, 0, 7); g.fill(); }
+      break;
+    }
+    case R.LOT: {
+      g.fillStyle = "#2a2018"; g.fillRect(px, py, T, T);
+      if (h < 0.35) { g.fillStyle = "#4a3a2a"; g.fillRect(px + h * 50, py + 8 + h * 20, 10, 6); g.fillStyle = "#ff9f1c"; g.globalAlpha = .4; g.fillRect(px + h * 50, py + 8 + h * 20, 10, 1); g.globalAlpha = 1; }
+      break;
+    }
+    case R.WALL: {
+      g.fillStyle = "#05060c"; g.fillRect(px, py, T, T);
+      g.fillStyle = "#1c2240"; g.fillRect(px + 2, py + 2, T - 4, T - 4);
+      g.strokeStyle = "rgba(255,63,164,.25)"; g.beginPath(); g.moveTo(px, py + T); g.lineTo(px + T, py); g.stroke();
+      break;
+    }
+    case R.GATE: case R.KIOSK: {
+      g.fillStyle = Z.ground; g.fillRect(px, py, T, T);
+      break;
+    }
+  }
+}
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = clamp((n >> 16) + amt, 0, 255), gg = clamp(((n >> 8) & 255) + amt, 0, 255), b = clamp((n & 255) + amt, 0, 255);
+  return "rgb(" + r + "," + gg + "," + b + ")";
+}
+
+// ======================= AUDIO =======================
+let AC = null, soundOn = true;
+function audio() { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; } } return AC; }
+function beep(freq, dur = 0.08, type = "square", vol = 0.05, slide = 0) {
+  if (!soundOn) return; const a = audio(); if (!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, a.currentTime);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), a.currentTime + dur);
+  g.gain.setValueAtTime(vol, a.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+  o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + dur + 0.02);
+}
+const sfx = {
+  coin: () => { beep(880, .08, "square", .05); setTimeout(() => beep(1320, .14, "square", .05), 70); setTimeout(() => beep(1760, .18, "triangle", .05), 150); },
+  hurt: () => beep(220, .2, "sawtooth", .07, -150),
+  nope: () => beep(160, .12, "square", .04),
+  buy: () => { beep(660, .07, "triangle", .06); setTimeout(() => beep(990, .1, "triangle", .06), 60); },
+  emp: () => beep(1200, .5, "sawtooth", .06, -1100),
+  gate: () => { beep(330, .2, "triangle", .06, 330); },
+  ping: (s) => beep(500 + s * 700, .05, "sine", .04),
+};
+
+// ======================= ENTRÉES =======================
+const keys = {};
+const joy = { x: 0, y: 0 };
+addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+  if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(k)) e.preventDefault();
+  if (e.repeat) { keys[k] = true; return; }
+  keys[k] = true;
+  if (!running) return;
+  if (inShop >= 0) { if (k === "e" || k === "escape") closeShop(); return; }
+  if (k === "p" || k === "escape") { togglePause(); return; }
+  if (paused) return;
+  if (k === "e" || k === " ") act();
+  if (k === "f" || k === "x") useEmp();
+});
+addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
+
+function moveInput() {
+  let x = 0, y = 0;
+  if (keys["arrowleft"] || keys["q"] && azerty || keys["a"] && !azerty) x -= 1;
+  if (keys["arrowright"] || keys["d"]) x += 1;
+  if (keys["arrowup"] || keys["z"] && azerty || keys["w"] && !azerty) y -= 1;
+  if (keys["arrowdown"] || keys["s"]) y += 1;
+  x += joy.x; y += joy.y;
+  const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
+  return { x, y };
+}
+// Détection du clavier : si le joueur appuie sur Z on passe en AZERTY, sur W en QWERTY.
+let azerty = (navigator.language || "fr").toLowerCase().startsWith("fr");
+addEventListener("keydown", e => { const k = e.key.toLowerCase(); if (k === "z") azerty = true; if (k === "w") azerty = false; }, true);
+
+// ======================= LOGIQUE =======================
+function msg(text, cls = "") {
+  const d = document.createElement("div"); d.className = "msg " + cls; d.textContent = text;
+  const log = document.getElementById("log"); log.prepend(d);
+  while (log.children.length > 4) log.lastChild.remove();
+  setTimeout(() => d.remove(), 4000);
+}
+function solid(x, y) {
+  const t = tileAt(Math.floor(x), Math.floor(y));
+  if (t === R.BUILD || t === R.WALL || t === R.KIOSK) return true;
+  if (t === R.GATE) return !S.gates[zoneOf(Math.floor(x))];
+  return false;
+}
+function collide(x, y, r) { return solid(x - r, y - r) || solid(x + r, y - r) || solid(x - r, y + r) || solid(x + r, y + r); }
+
+function nearestTreasure() {
+  const z = zoneOf(Math.floor(player.x));
+  let best = null, bd = 1e9;
+  for (const t of S.treasures) { if (t.z !== z) continue; const d = dist(player.x, player.y, t.x + .5, t.y + .5); if (d < bd) { bd = d; best = t; } }
+  return best ? { t: best, d: bd } : null;
+}
+const SCAN_RANGE = [0, 7, 12, 20];
+
+function nearKiosk() {
+  const z = zoneOf(Math.floor(player.x)), k = KIOSK(z);
+  return dist(player.x, player.y, k.x + .5, k.y + .5) < 1.9 ? z : -1;
+}
+function nearGate() {
+  for (let z = 0; z < NZ - 1; z++) { const gx = (z + 1) * ZW - 1 + .5; if (dist(player.x, player.y, gx, 23) < 2.2) return z; }
+  return -1;
+}
+
+function act() {
+  const k = nearKiosk(); if (k >= 0) { openShop(k); return; }
+  const g = nearGate();
+  if (g >= 0 && !S.gates[g]) { msg("Portail verrouillé : il faut « " + ITEMS[GATE_ITEM[g]].n + " » (" + ITEMS[GATE_ITEM[g]].p + " ¢, marchand de cette zone).", "bad"); sfx.nope(); return; }
+  if (player.search > 0) return;
+  player.search = 0.55;
+  S.en = Math.max(0, S.en - 1);
+}
+function finishSearch() {
+  const n = nearestTreasure();
+  if (n && n.d < 1.35) {
+    const t = n.t;
+    S.treasures.splice(S.treasures.indexOf(t), 1);
+    S.credits += t.v; S.earned += t.v; S.found++;
+    S.respawn.push({ z: t.z, at: S.time + 18 + rand() * 20 });
+    msg("Trésor trouvé : " + t.name + " → +" + t.v + " ¢", "good");
+    floaters.push({ x: t.x + .5, y: t.y + .2, txt: "+" + t.v + " ¢", life: 1.6, c: "#ffd166" });
+    for (let i = 0; i < 24; i++) particles.push({ x: t.x + .5, y: t.y + .5, vx: (rand() - .5) * 6, vy: (rand() - .5) * 6, life: .8, c: ZONES[t.z].neon[i % 3] });
+    sfx.coin(); save();
+  } else {
+    floaters.push({ x: player.x, y: player.y - .5, txt: "rien…", life: 1, c: "#8592b8" });
+    sfx.nope();
+  }
+}
+function useEmp() {
+  if (paused || inShop >= 0) return;
+  if (S.emp <= 0) { msg("Aucune grenade IEM. Achète-en chez un marchand.", "bad"); sfx.nope(); return; }
+  S.emp--; sfx.emp();
+  pulses.push({ x: player.x, y: player.y, r: 0, max: 5, c: "#2ef2ff" });
+  let n = 0;
+  for (const d of drones) if (dist(d.x, d.y, player.x, player.y) < 5) { d.stun = 6; n++; }
+  msg(n ? "IEM : " + n + " drone(s) neutralisé(s)." : "IEM déclenchée… aucun drone à portée.");
+}
+
+function buy(id) {
+  const it = ITEMS[id];
+  if (S.credits < it.p) { sfx.nope(); return; }
+  S.credits -= it.p; it.use(S); sfx.buy();
+  msg("Acheté : " + it.n, "good");
+  if (it.key !== undefined) { msg("Portail ouvert vers " + ZONES[it.key + 1].name + " (à l'est, route centrale).", "good"); sfx.gate(); }
+  save(); renderShop();
+  if (S.won) { closeShop(); endGame(true); }
+}
+
+function hurt(amount, why) {
+  if (S.shield && why === "drone") amount *= 0.5;
+  S.hp -= amount; player.hurt = 0.3;
+  if (S.hp <= 0) die(why);
+}
+function die(why) {
+  S.deaths++;
+  const lost = Math.floor(S.credits / 2);
+  S.credits -= lost; S.hp = 70; S.en = Math.max(S.en, 60);
+  // retour au marchand de la zone la plus avancée débloquée
+  let z = 0; for (let i = 0; i < 3; i++) if (S.gates[i]) z = i + 1;
+  const sp = SPAWN(Math.min(z, zoneOf(Math.floor(player.x))));
+  player.x = sp.x; player.y = sp.y;
+  for (const d of drones) d.stun = Math.max(d.stun, 3);
+  const cause = why === "drone" ? "abattu par un drone" : why === "toxic" ? "intoxiqué" : "à bout d'énergie";
+  msg("Tu t'es effondré (" + cause + "). Rapatrié par les secours, tu perds " + lost + " ¢.", "bad");
+  sfx.hurt(); save();
+}
+
+let pingT = 0, saveT = 0;
+function update(dt) {
+  S.time += dt;
+  // déplacement
+  const inp = moveInput();
+  let spd = 4.6 * (S.boots ? 1.3 : 1);
+  if (S.en <= 0) spd *= 0.55;
+  if (player.search > 0) spd *= 0.2;
+  const tUnder = tileAt(Math.floor(player.x), Math.floor(player.y));
+  if (tUnder === R.TOXIC && !S.suit) spd *= 0.7;
+  const r = 0.3;
+  const nx = player.x + inp.x * spd * dt, ny = player.y + inp.y * spd * dt;
+  if (!collide(nx, player.y, r)) player.x = nx;
+  if (!collide(player.x, ny, r)) player.y = ny;
+  const moving = Math.abs(inp.x) + Math.abs(inp.y) > 0.05;
+  if (moving) player.face = Math.atan2(inp.y, inp.x);
+
+  // fouille
+  if (player.search > 0) { player.search -= dt; if (player.search <= 0) { player.search = 0; finishSearch(); } }
+
+  // survie
+  S.en = Math.max(0, S.en - (0.22 + (moving ? 0.5 : 0)) * dt);
+  if (S.en <= 0) hurt(2.2 * dt, "faim");
+  else if (S.en > 30 && S.hp < 100) S.hp = Math.min(100, S.hp + 0.35 * dt);
+  if (tUnder === R.TOXIC && !S.suit) { hurt(9 * dt, "toxic"); if (rand() < dt * 3) particles.push({ x: player.x, y: player.y, vx: (rand() - .5), vy: -1.5, life: .7, c: "#7dff4d" }); }
+  player.hurt = Math.max(0, player.hurt - dt);
+
+  // drones
+  const pz = zoneOf(Math.floor(player.x));
+  for (const d of drones) {
+    d.ph += dt * 4;
+    if (d.stun > 0) { d.stun -= dt; continue; }
+    d.cool = Math.max(0, d.cool - dt);
+    const Z = ZONES[d.z];
+    const dp = dist(d.x, d.y, player.x, player.y);
+    d.chase = d.z === pz && dp < 6.5 && d.cool <= 0.6;
+    let tx = d.tx, ty = d.ty, sp = 1.6;
+    if (d.chase) { tx = player.x; ty = player.y; sp = Z.dspd; }
+    else if (dist(d.x, d.y, d.tx, d.ty) < 0.5) { const p = randomPointInZone(d.z); d.tx = p.x; d.ty = p.y; }
+    if (d.cool > 0.6) { tx = d.x + (d.x - player.x); ty = d.y + (d.y - player.y); sp = 2.5; } // recul après une attaque
+    const dd = dist(d.x, d.y, tx, ty) || 1;
+    d.x += (tx - d.x) / dd * sp * dt; d.y += (ty - d.y) / dd * sp * dt;
+    d.x = clamp(d.x, d.z * ZW + 1, (d.z + 1) * ZW - 1.6); d.y = clamp(d.y, 1, H - 2);
+    if (d.z === pz && dp < 0.6 && d.cool <= 0) { d.cool = 1.4; hurt(Z.dmg, "drone"); sfx.hurt(); msg("Un drone t'attaque ! (−" + Math.round(Z.dmg * (S.shield ? .5 : 1)) + " santé)", "bad"); }
+  }
+
+  // réapparition des trésors
+  for (let i = S.respawn.length - 1; i >= 0; i--) if (S.time >= S.respawn[i].at) { spawnTreasure(S.respawn[i].z); S.respawn.splice(i, 1); }
+
+  // scanner
+  const n = nearestTreasure(), range = SCAN_RANGE[S.scan];
+  pingT -= dt;
+  if (n && n.d < range) {
+    const s = 1 - n.d / range;
+    if (pingT <= 0) { sfx.ping(s); pulses.push({ x: player.x, y: player.y, r: 0, max: 1.5 + s * 1.5, c: s > .8 ? "#ffd166" : "#2ef2ff", scan: 1 }); pingT = 0.15 + (1 - s) * 1.4; }
+  }
+
+  // effets
+  for (const p of pulses) p.r += dt * (p.scan ? 4 : 10);
+  pulses = pulses.filter(p => p.r < p.max);
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .94; p.vy *= .94; p.life -= dt; }
+  particles = particles.filter(p => p.life > 0);
+  for (const f of floaters) { f.y -= dt * .8; f.life -= dt; }
+  floaters = floaters.filter(f => f.life > 0);
+
+  S.px = player.x; S.py = player.y;
+  saveT += dt; if (saveT > 8) { saveT = 0; save(); }
+}
+
+// ======================= DESSIN =======================
+const cv = document.getElementById("game"), ctx = cv.getContext("2d");
+const mini = document.getElementById("mini"), mctx = mini.getContext("2d");
+let VW = 0, VH = 0, DPR = 1, ZOOM = 1;
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  VW = innerWidth; VH = innerHeight;
+  cv.width = VW * DPR; cv.height = VH * DPR;
+  ZOOM = VW < 700 ? 0.8 : 1;
+  mini.width = W * 2; mini.height = H * 2;
+}
+addEventListener("resize", resize);
+
+const rain = Array.from({ length: 140 }, () => ({ x: rand(), y: rand(), s: 0.6 + rand() * 0.8 }));
+let camX = 0, camY = 0, tNow = 0;
+
+function draw() {
+  const sc = DPR * ZOOM;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#070912"; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (!S) return;
+  const vw = VW / ZOOM, vh = VH / ZOOM;
+  camX = clamp(player.x * T - vw / 2, 0, Math.max(0, W * T - vw));
+  camY = clamp(player.y * T - vh / 2, 0, Math.max(0, H * T - vh));
+  if (W * T < vw) camX = (W * T - vw) / 2;
+  if (H * T < vh) camY = (H * T - vh) / 2;
+  const cx = Math.round(camX), cy = Math.round(camY);
+  ctx.setTransform(sc, 0, 0, sc, -cx * sc, -cy * sc);
+  ctx.imageSmoothingEnabled = false;
+  const sx = clamp(cx, 0, W * T), sy = clamp(cy, 0, H * T);
+  const sw = Math.min(vw + 2, W * T - sx), sh = Math.min(vh + 2, H * T - sy);
+  if (sw > 0 && sh > 0) ctx.drawImage(worldCv, sx, sy, sw, sh, sx, sy, sw, sh);
+
+  // flaques animées
+  const x0 = Math.floor(cx / T), y0 = Math.floor(cy / T), x1 = Math.ceil((cx + vw) / T), y1 = Math.ceil((cy + vh) / T);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const t = tileAt(x, y);
+    if (t === R.TOXIC) {
+      const h = hash(x, y);
+      const a = 0.08 + 0.08 * Math.sin(tNow * 2 + h * 20);
+      ctx.fillStyle = "rgba(125,255,77," + a.toFixed(3) + ")"; ctx.fillRect(x * T, y * T, T, T);
+    } else if (t === R.GATE) drawGate(x, y);
+    else if (t === R.KIOSK) drawKiosk(x, y);
+  }
+
+  // trésors : légère scintillation seulement si scanner Mk3 tout près (sinon invisibles)
+  for (const tr of S.treasures) {
+    const d = dist(player.x, player.y, tr.x + .5, tr.y + .5);
+    if (d < 1.6) {
+      ctx.fillStyle = "rgba(255,209,102," + (0.25 + 0.2 * Math.sin(tNow * 8)).toFixed(3) + ")";
+      ctx.beginPath(); ctx.arc(tr.x * T + 16, tr.y * T + 16, 6 + 2 * Math.sin(tNow * 6), 0, 7); ctx.fill();
+    }
+  }
+
+  // impulsions
+  for (const p of pulses) {
+    ctx.strokeStyle = p.c; ctx.globalAlpha = 1 - p.r / p.max; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p.x * T, p.y * T, p.r * T, 0, 7); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // drones
+  for (const d of drones) {
+    if (d.x * T < cx - 40 || d.x * T > cx + vw + 40 || d.y * T < cy - 40 || d.y * T > cy + vh + 40) continue;
+    const X = d.x * T, Y = d.y * T + Math.sin(d.ph) * 2;
+    ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.ellipse(X, d.y * T + 12, 10, 4, 0, 0, 7); ctx.fill();
+    if (d.chase && d.stun <= 0) { ctx.fillStyle = "rgba(255,40,80,.12)"; ctx.beginPath(); ctx.arc(X, Y, 30, 0, 7); ctx.fill(); }
+    ctx.save(); ctx.translate(X, Y); ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = d.stun > 0 ? "#3a3f55" : "#2a2f48"; ctx.fillRect(-9, -9, 18, 18);
+    ctx.strokeStyle = d.stun > 0 ? "#2ef2ff" : "#ff2850"; ctx.lineWidth = 1.5; ctx.strokeRect(-9, -9, 18, 18);
+    ctx.restore();
+    ctx.fillStyle = d.stun > 0 ? (Math.sin(tNow * 20) > 0 ? "#2ef2ff" : "#123") : "#ff2850";
+    ctx.beginPath(); ctx.arc(X, Y, 3.5, 0, 7); ctx.fill();
+    for (let i = 0; i < 4; i++) { const a = d.ph * 3 + i * Math.PI / 2; ctx.fillStyle = "rgba(200,210,255,.4)"; ctx.fillRect(X + Math.cos(a) * 12 - 1, Y + Math.sin(a) * 12 - 1, 2, 2); }
+  }
+
+  // joueur
+  const PX = player.x * T, PY = player.y * T;
+  ctx.fillStyle = "rgba(0,0,0,.4)"; ctx.beginPath(); ctx.ellipse(PX, PY + 10, 9, 4, 0, 0, 7); ctx.fill();
+  const glow = ctx.createRadialGradient(PX, PY, 2, PX, PY, 26);
+  glow.addColorStop(0, "rgba(46,242,255,.35)"); glow.addColorStop(1, "rgba(46,242,255,0)");
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(PX, PY, 26, 0, 7); ctx.fill();
+  ctx.fillStyle = player.hurt > 0 ? "#ff4d6d" : (S.suit ? "#7dff4d" : "#dfe8ff");
+  ctx.beginPath(); ctx.arc(PX, PY, 9, 0, 7); ctx.fill();
+  ctx.fillStyle = "#2ef2ff"; ctx.beginPath(); ctx.arc(PX + Math.cos(player.face) * 5, PY + Math.sin(player.face) * 5, 3.5, 0, 7); ctx.fill();
+  if (S.shield) { ctx.strokeStyle = "rgba(176,107,255,.5)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(PX, PY, 14, 0, 7); ctx.stroke(); }
+  if (player.search > 0) {
+    ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(PX, PY, 17, -Math.PI / 2, -Math.PI / 2 + (1 - player.search / .55) * Math.PI * 2); ctx.stroke();
+  }
+  // flèche du scanner Mk3
+  const n = nearestTreasure();
+  if (S.scan >= 3 && n && n.d < SCAN_RANGE[3] && n.d > 1.2) {
+    const a = Math.atan2(n.t.y + .5 - player.y, n.t.x + .5 - player.x);
+    ctx.save(); ctx.translate(PX + Math.cos(a) * 28, PY + Math.sin(a) * 28); ctx.rotate(a);
+    ctx.fillStyle = "#ffd166"; ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-5, -5); ctx.lineTo(-5, 5); ctx.fill(); ctx.restore();
+  }
+
+  // particules & textes
+  for (const p of particles) { ctx.globalAlpha = clamp(p.life, 0, 1); ctx.fillStyle = p.c; ctx.fillRect(p.x * T - 2, p.y * T - 2, 4, 4); }
+  ctx.globalAlpha = 1;
+  ctx.font = "700 14px 'Chakra Petch', sans-serif"; ctx.textAlign = "center";
+  for (const f of floaters) { ctx.globalAlpha = clamp(f.life, 0, 1); ctx.fillStyle = "#000"; ctx.fillText(f.txt, f.x * T + 1, f.y * T + 1); ctx.fillStyle = f.c; ctx.fillText(f.txt, f.x * T, f.y * T); }
+  ctx.globalAlpha = 1;
+
+  // ambiance : vignette nocturne + pluie
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const psx = (PX - cx) * ZOOM, psy = (PY - cy) * ZOOM;
+  const vg = ctx.createRadialGradient(psx, psy, 80, psx, psy, Math.max(VW, VH) * 0.75);
+  vg.addColorStop(0, "rgba(4,6,14,0)"); vg.addColorStop(1, "rgba(4,6,14,.72)");
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, VW, VH);
+  if (S.en <= 0 || S.hp < 25) { ctx.fillStyle = "rgba(255,40,80," + (0.08 + 0.06 * Math.sin(tNow * 6)).toFixed(3) + ")"; ctx.fillRect(0, 0, VW, VH); }
+  ctx.strokeStyle = "rgba(150,190,255,.18)"; ctx.lineWidth = 1; ctx.beginPath();
+  for (const d of rain) {
+    d.y += 0.012 * d.s; d.x -= 0.002 * d.s; if (d.y > 1) { d.y = 0; d.x = rand(); } if (d.x < 0) d.x += 1;
+    const x = d.x * VW, y = d.y * VH; ctx.moveTo(x, y); ctx.lineTo(x - 3, y + 12 * d.s);
+  }
+  ctx.stroke();
+  drawMini();
+}
+
+function drawGate(x, y) {
+  const z = zoneOf(x), open = S.gates[z];
+  ctx.fillStyle = "#05060c"; ctx.fillRect(x * T, y * T, T, T);
+  if (open) { ctx.fillStyle = "rgba(67,245,160,.15)"; ctx.fillRect(x * T, y * T, T, T); ctx.fillStyle = "#43f5a0"; ctx.fillRect(x * T, y * T, 3, T); ctx.fillRect(x * T + T - 3, y * T, 3, T); }
+  else {
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = "rgba(255,63,164," + (0.5 + 0.4 * Math.sin(tNow * 6 + i)).toFixed(3) + ")";
+      ctx.fillRect(x * T + 4 + i * 7, y * T, 2, T);
+    }
+  }
+}
+function drawKiosk(x, y) {
+  const z = zoneOf(x), c = ZONES[z].neon[1];
+  const X = x * T, Y = y * T;
+  ctx.fillStyle = "#151a30"; ctx.fillRect(X + 3, Y + 3, T - 6, T - 6);
+  ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.strokeRect(X + 3, Y + 3, T - 6, T - 6);
+  ctx.fillStyle = c; ctx.globalAlpha = .25 + .15 * Math.sin(tNow * 3); ctx.beginPath(); ctx.arc(X + 16, Y + 16, 30, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+  ctx.font = "700 16px 'Chakra Petch', sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#ffd166"; ctx.fillText("¢", X + 16, Y + 22);
+  ctx.font = "700 10px 'JetBrains Mono', monospace"; ctx.fillStyle = c; ctx.fillText("MARCHAND", X + 16, Y - 6 + Math.sin(tNow * 2) * 2);
+}
+function drawMini() {
+  const m = mctx; m.setTransform(1, 0, 0, 1, 0, 0); m.imageSmoothingEnabled = false;
+  m.drawImage(miniBase, 0, 0, W * 2, H * 2);
+  for (let z = 1; z < NZ; z++) if (!S.gates[z - 1]) { m.fillStyle = "rgba(4,6,14,.7)"; m.fillRect(z * ZW * 2, 0, ZW * 2, H * 2); }
+  for (const d of drones) if (d.z === zoneOf(Math.floor(player.x)) && dist(d.x, d.y, player.x, player.y) < 12) { m.fillStyle = "#ff2850"; m.fillRect(d.x * 2 - 1, d.y * 2 - 1, 3, 3); }
+  m.fillStyle = Math.sin(tNow * 8) > 0 ? "#fff" : "#2ef2ff"; m.fillRect(player.x * 2 - 2, player.y * 2 - 2, 5, 5);
+  m.strokeStyle = "rgba(46,242,255,.6)"; m.lineWidth = 1;
+  m.strokeRect((camX / T) * 2, (camY / T) * 2, (VW / ZOOM / T) * 2, (VH / ZOOM / T) * 2);
+}
+
+// ======================= HUD =======================
+const $ = id => document.getElementById(id);
+function hud() {
+  const z = zoneOf(Math.floor(player.x));
+  $("zoneName").textContent = ZONES[z].name; $("zoneName").style.color = ZONES[z].neon[0];
+  $("credits").textContent = S.credits.toLocaleString("fr-FR") + " ¢";
+  $("hpB").style.width = clamp(S.hp, 0, 100) + "%"; $("hpT").textContent = Math.ceil(Math.max(0, S.hp));
+  $("enB").style.width = clamp(S.en / S.enMax * 100, 0, 100) + "%"; $("enT").textContent = Math.ceil(S.en) + "/" + S.enMax;
+  $("scanLvl").textContent = "Mk" + S.scan;
+  const n = nearestTreasure(), range = SCAN_RANGE[S.scan];
+  let bars = 0; if (n && n.d < range) bars = Math.ceil((1 - n.d / range) * 5);
+  $("scanBars").textContent = "▮".repeat(bars) + "▯".repeat(5 - bars);
+  $("scanBars").style.color = bars >= 4 ? "#ffd166" : "#2ef2ff";
+  $("scanDist").textContent = (S.scan >= 2 && n && n.d < range) ? n.d.toFixed(1) + " m" : (bars ? "" : "aucun signal");
+  const inv = [];
+  inv.push("IEM ×" + S.emp);
+  if (S.boots) inv.push("Bottes"); if (S.shield) inv.push("Bouclier"); if (S.suit) inv.push("Combinaison");
+  if (S.enMax > 100) inv.push("Batterie+");
+  inv.push("Trésors : " + S.found);
+  $("inv").textContent = inv.join(" · ");
+  let hint = "";
+  if (nearKiosk() >= 0) hint = "[E] Parler au marchand";
+  else { const g = nearGate(); if (g >= 0 && !S.gates[g]) hint = "Portail verrouillé · requiert : " + ITEMS[GATE_ITEM[g]].n; else if (n && n.d < 1.35) hint = "[E] Fouiller ici !"; }
+  $("hint").textContent = hint;
+}
+
+// ======================= BOUTIQUE =======================
+function openShop(z) { inShop = z; paused = true; $("shop").hidden = false; renderShop(); }
+function closeShop() { inShop = -1; paused = false; $("shop").hidden = true; }
+function renderShop() {
+  const z = inShop; if (z < 0) return;
+  $("shopTitle").textContent = "Marchand · " + ZONES[z].name;
+  $("shopSub").textContent = "Crédits : " + S.credits.toLocaleString("fr-FR") + " ¢ · Santé " + Math.ceil(S.hp) + " · Énergie " + Math.ceil(S.en) + "/" + S.enMax;
+  const list = $("shopList"); list.innerHTML = "";
+  for (const id of SHOPS[z]) {
+    const it = ITEMS[id];
+    let owned = false;
+    if (it.once === "scan") owned = S.scan >= it.lvl;
+    else if (it.once === "boots") owned = S.boots; else if (it.once === "shield") owned = S.shield;
+    else if (it.once === "suit") owned = S.suit; else if (it.once === "battery") owned = S.enMax > 100;
+    else if (it.key !== undefined) owned = S.gates[it.key];
+    const row = document.createElement("div"); row.className = "item" + (it.key !== undefined || id === "ticket" ? " key" : "");
+    const nm = document.createElement("div"); nm.className = "n"; nm.textContent = it.n + " ";
+    const pr = document.createElement("span"); pr.className = "p"; pr.textContent = it.p.toLocaleString("fr-FR") + " ¢"; nm.appendChild(pr);
+    if (it.key !== undefined) { const tg = document.createElement("span"); tg.className = "tag"; tg.textContent = "accès"; nm.appendChild(tg); }
+    if (id === "ticket") { const tg = document.createElement("span"); tg.className = "tag"; tg.textContent = "objectif final"; nm.appendChild(tg); }
+    const ds = document.createElement("div"); ds.className = "d"; ds.textContent = it.d;
+    const b = document.createElement("button"); b.className = "btn"; b.type = "button";
+    b.textContent = owned ? "Possédé" : "Acheter"; b.disabled = owned || S.credits < it.p;
+    b.addEventListener("click", () => buy(id));
+    row.append(nm, ds, b); list.appendChild(row);
+  }
+}
+$("bCloseShop").addEventListener("click", closeShop);
+
+// ======================= PAUSE / FIN =======================
+function fmtTime(s) { const m = Math.floor(s / 60); return m + " min " + String(Math.floor(s % 60)).padStart(2, "0") + " s"; }
+function togglePause() {
+  if (inShop >= 0) return;
+  paused = !paused; $("pause").hidden = !paused; $("confirmTxt").hidden = true;
+  if (paused) { $("pauseStats").textContent = "Temps de jeu : " + fmtTime(S.time) + " · Trésors trouvés : " + S.found + " · Crédits gagnés : " + S.earned.toLocaleString("fr-FR") + " ¢ · Chutes : " + S.deaths; save(); }
+}
+$("bPause").addEventListener("click", togglePause);
+$("bResume").addEventListener("click", togglePause);
+$("bRestart").addEventListener("click", () => { $("confirmTxt").hidden = false; });
+$("bConfirm").addEventListener("click", () => { $("pause").hidden = true; wipe(); startGame(newState()); });
+$("bSound").addEventListener("click", () => { soundOn = !soundOn; $("bSound").textContent = "Son : " + (soundOn ? "oui" : "non"); });
+
+function endGame(win) {
+  paused = true; running = false;
+  $("endTitle").textContent = win ? "ÉVASION RÉUSSIE" : "FIN";
+  $("endTxt").textContent = "La navette orbitale décolle et Néo-Kairos rétrécit sous tes pieds. Temps : " + fmtTime(S.time) + " · " + S.found + " trésors · " + S.earned.toLocaleString("fr-FR") + " ¢ gagnés · " + S.deaths + " chute(s).";
+  $("endScr").hidden = false; wipe();
+}
+$("bEnd").addEventListener("click", () => { $("endScr").hidden = true; startGame(newState()); });
+
+// ======================= SAUVEGARDE =======================
+function save() { if (!S || S.won) return; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) {} }
+function load() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+function wipe() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
+
+// ======================= DÉMARRAGE =======================
+function startGame(state) {
+  S = state;
+  genMap(S.seed); prerender();
+  player = { x: S.px, y: S.py, vx: 0, vy: 0, face: 0, search: 0, hurt: 0 };
+  if (collide(player.x, player.y, 0.3)) { const sp = SPAWN(0); player.x = sp.x; player.y = sp.y; }
+  if (!S.treasures.length) for (let z = 0; z < NZ; z++) for (let i = 0; i < TREASURES_PER_ZONE; i++) spawnTreasure(z);
+  spawnDrones();
+  pulses = []; particles = []; floaters = [];
+  $("title").hidden = true; $("hud").hidden = false; mini.hidden = false; $("topBtns").hidden = false;
+  if (isTouch) $("touch").hidden = false;
+  running = true; paused = false; inShop = -1;
+  audio();
+  if (S.time < 1) {
+    msg("Le marchand (¢) est tout près, au nord-est. Avance et fouille avec E quand le scanner s'affole.");
+    msg("Objectif : 250 ¢ pour le Badge du Secteur Industriel.");
+  } else msg("Partie reprise. Bon retour à Néo-Kairos.");
+  save();
+}
+$("bNew").addEventListener("click", () => { wipe(); startGame(newState()); });
+$("bCont").addEventListener("click", () => { const s = load(); if (s) startGame(s); });
+if (load()) $("bCont").hidden = false;
+
+// ======================= TACTILE =======================
+const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
+(function setupTouch() {
+  const stick = $("stick"), knob = $("knob"); let id = null;
+  const set = (e) => {
+    const r = stick.getBoundingClientRect(); const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    let dx = e.clientX - cx, dy = e.clientY - cy; const l = Math.hypot(dx, dy), max = r.width / 2;
+    if (l > max) { dx = dx / l * max; dy = dy / l * max; }
+    joy.x = dx / max; joy.y = dy / max;
+    knob.style.left = (40 + dx) + "px"; knob.style.top = (40 + dy) + "px";
+  };
+  stick.addEventListener("pointerdown", e => { id = e.pointerId; stick.setPointerCapture(id); set(e); });
+  stick.addEventListener("pointermove", e => { if (e.pointerId === id) set(e); });
+  const end = e => { if (e.pointerId !== id) return; id = null; joy.x = joy.y = 0; knob.style.left = "40px"; knob.style.top = "40px"; };
+  stick.addEventListener("pointerup", end); stick.addEventListener("pointercancel", end);
+  $("tE").addEventListener("pointerdown", e => { e.preventDefault(); if (inShop >= 0) { closeShop(); return; } if (!paused) act(); });
+  $("tQ").addEventListener("pointerdown", e => { e.preventDefault(); useEmp(); });
+})();
+
+// ======================= BOUCLE =======================
+let last = performance.now(), hudT = 0;
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; tNow = now / 1000;
+  if (running && !paused) update(dt);
+  draw();
+  hudT -= dt; if (S && hudT <= 0) { hud(); hudT = 0.1; }
+  requestAnimationFrame(loop);
+}
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
