@@ -1,6 +1,6 @@
 # Plan de production — Atlas 3D de l'anatomie du porc (version haute définition)
 
-Statut : **proposition, en attente de validation**. Rien n'est produit avant votre accord.
+Statut : **validé le 15/11/2026** — chaîne 100 % libre, formation payante (licences NC exclues). Sources vérifiées : voir `SOURCES.md`.
 
 ---
 
